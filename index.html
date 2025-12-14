@@ -145,51 +145,66 @@ function getCategory(row) {
    4. CARICAMENTO DATI CSV
    =============================== */
 
-async function loadData() {
-  const response = await fetch(CSV_URL);
-  const text = await response.text();
+function loadData() {
 
-  const rows = text.trim().split("\n");
-  const headers = rows[0].split(",");
+  const csvUrl = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQV5vkNteaZi31wNAuMVEvaBVyETWETC9C3R01wmtB_JaoSgXPasKPS9ZdjrrN9j4gPjv-_ZoOeWpkS/pub?gid=602128412&single=true&output=csv";
 
-  // Pulisce eventuali marker precedenti
-  markersData.forEach(obj => map.removeLayer(obj.marker));
-  markersData = [];
+  console.log("Carico CSV da:", csvUrl);
 
-  const categoriesSet = new Set();
+  fetch(csvUrl)
+    .then(response => {
+      if (!response.ok) {
+        throw new Error("Errore HTTP: " + response.status);
+      }
+      return response.text();
+    })
+    .then(csvText => {
+      console.log("CSV caricato, lunghezza:", csvText.length);
 
-  for (let i = 1; i < rows.length; i++) {
-    const values = rows[i].split(",");
-    const row = {};
-    headers.forEach((h, idx) => row[h] = values[idx]);
+      const rows = csvText.trim().split("\n");
+      const headers = rows[0].split(",");
 
-    const lat = parseFloat(row.Latitudine);
-    const lng = parseFloat(row.Longitudine);
+      markersData.forEach(obj => map.removeLayer(obj.marker));
+      markersData = [];
 
-    // Esclude coordinate non valide
-    if (isNaN(lat) || isNaN(lng)) continue;
+      const categoriesSet = new Set();
 
-    const category = getCategory(row);
-    categoriesSet.add(category);
+      for (let i = 1; i < rows.length; i++) {
+        const values = rows[i].split(",");
+        const row = {};
+        headers.forEach((h, idx) => row[h] = values[idx]);
 
-    const marker = L.circleMarker([lat, lng], {
-      radius: 7,
-      color: "#000",
-      weight: 1,
-      fillOpacity: 0.9
-    }).addTo(map);
+        const lat = parseFloat(row.Latitudine);
+        const lng = parseFloat(row.Longitudine);
 
-    marker.bindPopup(
-      `<b>Data:</b> ${row.Data || "—"}<br>
-       <b>Età:</b> ${row.Età || "—"}`
-    );
+        if (isNaN(lat) || isNaN(lng)) continue;
 
-    markersData.push({ marker, category });
-  }
+        const category = getCategory(row);
+        categoriesSet.add(category);
 
-  updateColors(categoriesSet);
-  updateLegend(categoriesSet);
+        const marker = L.circleMarker([lat, lng], {
+          radius: 7,
+          color: "#000",
+          weight: 1,
+          fillOpacity: 0.9
+        }).addTo(map);
+
+        marker.bindPopup(
+          `<b>Data:</b> ${row.Data || "—"}<br>
+           <b>Età:</b> ${row.Età || "—"}`
+        );
+
+        markersData.push({ marker, category });
+      }
+
+      updateColors(categoriesSet);
+      updateLegend(categoriesSet);
+    })
+    .catch(error => {
+      console.error("Errore caricamento CSV:", error);
+    });
 }
+
 
 /* ===============================
    5. COLORAZIONE MARKER
