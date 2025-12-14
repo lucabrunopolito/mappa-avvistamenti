@@ -93,12 +93,30 @@ legend.addTo(map);
 /* ================== UTILS ================== */
 
 // parse DD/MM/YYYY
-function getYearFromItalianDate(dateStr) {
-  if (!dateStr || dateStr === "undefined") return null;
-  const parts = dateStr.split("/");
-  if (parts.length !== 3) return null;
-  const year = parseInt(parts[2], 10);
-  return isNaN(year) ? null : year;
+function getYearFromItalianDate(value) {
+  if (!value || value === "undefined") return null;
+
+  // Caso 1: numero seriale Google Sheets
+  if (!isNaN(value)) {
+    const baseDate = new Date(1899, 11, 30);
+    const realDate = new Date(baseDate.getTime() + value * 86400000);
+    return realDate.getFullYear();
+  }
+
+  // Caso 2: DD/MM/YYYY
+  if (typeof value === "string" && value.includes("/")) {
+    const parts = value.split("/");
+    if (parts.length === 3) {
+      const year = parseInt(parts[2], 10);
+      return isNaN(year) ? null : year;
+    }
+  }
+
+  // Caso 3: YYYY-MM-DD o simili
+  const d = new Date(value);
+  if (!isNaN(d)) return d.getFullYear();
+
+  return null;
 }
 
 /* ================== LEGENDA ================== */
