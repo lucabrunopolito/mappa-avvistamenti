@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="utf-8" />
+  <title>Mappa avvistamenti</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <!-- Leaflet -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+  <!-- PapaParse per CSV -->
+  <script src="https://unpkg.com/papaparse@5.4.1/papaparse.min.js"></script>
+
+  <style>
+    body { margin: 0; font-family: Arial, sans-serif; }
+    #controls {
+      padding: 10px;
+      background: #f5f5f5;
+      border-bottom: 1px solid #ccc;
+    }
+    #map {
+      height: calc(100vh - 60px);
+    }
+    select {
+      padding: 5px;
+      font-size: 14px;
+    }
+    .legend {
+      background: white;
+      padding: 8px;
+      line-height: 1.4;
+      font-size: 13px;
+    }
+  </style>
+</head>
+
+<body>
+
+<div id="controls">
+  Colora i segnaposto per:
+  <select id="colorMode">
+    <option value="eta">Età presunta</option>
+    <option value="data">Data avvistamento</option>
+  </select>
+</div>
+
+<div id="map"></div>
+
+<script>
+/* ================= CONFIG ================= */
+
+const CSV_URL =
+  "https://docs.google.com/spreadsheets/d/e/2PACX-1vQV5vkNteaZi31wNAuMVEvaBVyETWETC9C3R01wmtB_JaoSgXPasKPS9ZdjrrN9j4gPjv-_ZoOeWpkS/pub?gid=602128412&single=true&output=csv";
+
+// Centro Valle di Susa
+const INITIAL_VIEW = [45.1370, 7.0480];
+const INITIAL_ZOOM = 10;
+
+/* ================= MAP ================= */
+
+const map = L.map('map').setView(INITIAL_VIEW, INITIAL_ZOOM);
+
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  attribution: '&copy; OpenStreetMap'
+}).addTo(map);
+
+const markersLayer = L.layerGroup().addTo(map);
+
+/* ================= UTILS ================= */
+
+function clean(value) {
+  if (!value || value === "undefined") return "Non disponibile";
+  return value;
+}
+
+function isValidCoord(v) {
+  return v !== null && v !== "" && v !== "undefined" && !isNaN(v);
+}
+
+function colorByEta(eta) {
+  if (eta === "Non disponibile") return "gray";
+  if (eta.toLowerCase().includes("adult")) return "green";
+  if (eta.toLowerCase().includes("giovane")) return "orange";
+  return "blue";
+}
+
+function colorByData(data) {
+  if (data === "Non disponibile") return "gray";
+  return "red"; // base (estendibile in futuro)
+}
+
+/* ================= LOAD CSV ================= */
+
+function loadData(mode) {
+  markersLayer.clearLayers();
+
+  Papa.parse(CSV_URL, {
+    download: true,
+    header: false,
+    skipEmptyLines: true,
+    complete: function(results) {
+
+      results.data.forEach(row => {
+        const data = clean(row[0]);
+        const eta  = clean(row[1]);
+        const lat  = row[2];
+        const lng  = row[3];
+
+        if (!isValidCoord(lat) || !isValidCoord(lng)) return;
+
+        const color =
+          mode === "eta" ? colorByEta(eta) : colorByData(data);
+
+        const marker = L.circleMarker([lat, lng], {
+          radius: 7,
+          fillColor: color,
+          color: "#000",
+          weight: 1,
+          fillOpacity: 0.8
+        });
+
+        marker.bindPopup(
+          `<b>Data:</b> ${data}<br>
+           <b>Età:</b> ${eta}`
+        );
+
+        marker.addTo(markersLayer);
+      });
+    }
+  });
+}
+
+/* ================= CONTROLS ================= */
+
+document.getElementById("colorMode").addEventListener("change", e => {
+  loadData(e.target.value);
+});
+
+/* ================= INIT ================= */
+
+loadData("eta");
+</script>
+
+</body>
+</html>
