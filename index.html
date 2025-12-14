@@ -67,6 +67,16 @@ L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
 
 const markersLayer = L.layerGroup().addTo(map);
 
+const legend = L.control({ position: "bottomright" });
+
+legend.onAdd = function () {
+  const div = L.DomUtil.create("div", "legend");
+  div.innerHTML = "";
+  return div;
+};
+
+legend.addTo(map);
+  
 /* ================= UTILS ================= */
 
 function clean(value) {
@@ -90,6 +100,27 @@ function colorByData(data) {
   return "red"; // base (estendibile in futuro)
 }
 
+function updateLegend(mode) {
+  const div = document.querySelector(".legend");
+
+  if (mode === "eta") {
+    div.innerHTML = `
+      <b>Età presunta</b><br>
+      <span style="color:green">●</span> Adulto<br>
+      <span style="color:orange">●</span> Giovane<br>
+      <span style="color:blue">●</span> Altro<br>
+      <span style="color:gray">●</span> Non disponibile
+    `;
+  } else {
+    div.innerHTML = `
+      <b>Data avvistamento</b><br>
+      <span style="color:red">●</span> Data disponibile<br>
+      <span style="color:gray">●</span> Non disponibile
+    `;
+  }
+}
+
+  
 /* ================= LOAD CSV ================= */
 
 function loadData(mode) {
@@ -127,6 +158,7 @@ function loadData(mode) {
 
         marker.addTo(markersLayer);
       });
+      updateLegend(mode);
     }
   });
 }
