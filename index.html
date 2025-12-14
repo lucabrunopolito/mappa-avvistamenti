@@ -147,7 +147,7 @@ async function loadData(mode) {
 
   rows.forEach(row => {
     if (mode === "data") {
-      const year = getYearFromItalianDate(row["Giorno"]);
+      const year = getYearFromItalianDate(row["Data"]);
       if (year) valueSet.add(year.toString());
     }
     if (mode === "eta") {
@@ -171,7 +171,7 @@ async function loadData(mode) {
     let color = NO_DATA_COLOR;
 
     if (mode === "data") {
-      const year = getYearFromItalianDate(row["Giorno"]);
+      const year = getYearFromItalianDate(row["Data"]);
       if (year && colorMap[year]) color = colorMap[year];
     }
 
@@ -189,7 +189,7 @@ async function loadData(mode) {
     });
 
     marker.bindPopup(`
-      <b>Data:</b> ${row["Giorno"] || "Non disponibile"}<br>
+      <b>Data:</b> ${row["Data"] || "Non disponibile"}<br>
       <b>Età:</b> ${row["Età"] || "Non disponibile"}
     `);
 
