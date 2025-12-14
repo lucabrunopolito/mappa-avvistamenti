@@ -27,11 +27,12 @@
       font-size: 14px;
     }
     .legend {
-      background: white;
-      padding: 8px;
-      line-height: 1.4;
-      font-size: 13px;
-    }
+  background: white;
+  padding: 8px;
+  line-height: 1.4;
+  font-size: 13px;
+  border: 1px solid #ccc;
+}
   </style>
 </head>
 
@@ -76,6 +77,7 @@ legend.onAdd = function () {
 };
 
 legend.addTo(map);
+document.querySelector(".legend").innerHTML = "TEST LEGENDA";
   
 /* ================= UTILS ================= */
 
@@ -103,6 +105,8 @@ function colorByData(data) {
 function updateLegend(mode) {
   const div = document.querySelector(".legend");
 
+  if (!div) return;
+  
   if (mode === "eta") {
     div.innerHTML = `
       <b>Età presunta</b><br>
