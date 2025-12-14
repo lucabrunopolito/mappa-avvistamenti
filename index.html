@@ -1,38 +1,37 @@
 <!DOCTYPE html>
 <html lang="it">
 <head>
-  <meta charset="utf-8">
+<meta charset="utf-8" />
+<title>Mappa avvistamenti</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 
-  <!-- Responsive: fondamentale per Google Sites e mobile -->
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<!-- Leaflet -->
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
-  <title>Mappa avvistamenti</title>
-
-  <!-- Leaflet CSS -->
-  <link
-    rel="stylesheet"
-    href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
-  />
-
-  <!-- Leaflet JS -->
-  <script
-    src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js">
-  </script>
-
-  <!-- Stili base -->
 <style>
   html, body {
-    height: 100%;
     margin: 0;
+    height: 100%;
   }
 
-  /* Contenitore mappa */
   #map {
-    height: 100vh;
     width: 100%;
+    height: 100vh;
   }
 
-  /* Legenda */
+  .controls {
+    position: absolute;
+    top: 10px;
+    left: 10px;
+    z-index: 1000;
+    background: white;
+    padding: 8px;
+    border-radius: 6px;
+    box-shadow: 0 0 6px rgba(0,0,0,0.3);
+    font-family: sans-serif;
+  }
+
   .legend {
     position: absolute;
     bottom: 20px;
@@ -42,259 +41,246 @@
     padding: 10px;
     border-radius: 6px;
     box-shadow: 0 0 6px rgba(0,0,0,0.3);
-    font-size: 14px;
-    pointer-events: auto;
+    font-family: sans-serif;
+    font-size: 13px;
   }
 
   .legend-item {
     cursor: pointer;
     margin-bottom: 4px;
-    user-select: none;
+  }
+
+  .legend-item span {
+    display: inline-block;
+    width: 14px;
+    height: 14px;
+    margin-right: 6px;
+    vertical-align: middle;
   }
 
   .legend-item.disabled {
     opacity: 0.4;
-    text-decoration: line-through;
   }
 </style>
-  
 </head>
 
 <body>
 
-<!-- Selettore modalità -->
+<div id="map"></div>
+
 <div class="controls">
   <label>
-    Colorazione:
+    Colora per:
     <select id="modeSelect">
-      <option value="year">Data avvistamento</option>
+      <option value="date">Data avvistamento</option>
       <option value="age">Età presunta</option>
     </select>
   </label>
 </div>
 
-<!-- Mappa -->
-<div id="map"></div>
-
-<!-- Legenda -->
 <div id="legend" class="legend"></div>
 
 <script>
-/* ===============================
-   1. CONFIGURAZIONE BASE
-   =============================== */
+/* ======================================================
+   CONFIGURAZIONE
+====================================================== */
 
-// URL CSV pubblicato del foglio "Dati mappa"
 const CSV_URL =
   "https://docs.google.com/spreadsheets/d/e/2PACX-1vQV5vkNteaZi31wNAuMVEvaBVyETWETC9C3R01wmtB_JaoSgXPasKPS9ZdjrrN9j4gPjv-_ZoOeWpkS/pub?gid=602128412&single=true&output=csv";
 
-// Colori predefiniti (usati in rotazione)
-const COLOR_PALETTE = [
-  "#1f77b4", "#ff7f0e", "#2ca02c", "#d62728",
-  "#9467bd", "#8c564b", "#e377c2", "#7f7f7f",
-  "#bcbd22", "#17becf"
-];
+/* ======================================================
+   MAPPA
+====================================================== */
 
-// Colore per dato mancante
-const COLOR_MISSING = "#999999";
-
-// Insieme dei filtri attivi
-let activeFilters = new Set();
-
-// Tutti i marker caricati
-let markersData = [];
-
-// Modalità corrente ("year" o "age")
-let currentMode = "year";
-
-/* ===============================
-   2. INIZIALIZZA MAPPA
-   =============================== */
-
-const map = L.map("map").setView(
-  [45.1370, 7.0480], // Valle di Susa
-  10
-);
+const map = L.map("map").setView([45.1370, 7.0480], 10);
 
 L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-  attribution: "© OpenStreetMap"
+  attribution: "&copy; OpenStreetMap"
 }).addTo(map);
 
-/* ===============================
-   3. FUNZIONI DI SUPPORTO
-   =============================== */
+/* ======================================================
+   STATO
+====================================================== */
 
-// Converte "13/12/2025" → 2025
-function getYearFromItalianDate(value) {
+let markersData = [];
+let activeCategories = new Set();
+let currentMode = "date";
+
+/* ======================================================
+   UTILITY
+====================================================== */
+
+function normalize(value) {
   if (!value) return null;
-  const parts = value.split("/");
+  value = value.trim();
+  if (value === "" || value.toLowerCase() === "undefined") return null;
+  return value;
+}
+
+function getYearFromItalianDate(dateStr) {
+  if (!dateStr) return null;
+  const parts = dateStr.split("/");
   if (parts.length !== 3) return null;
-  return parts[2];
+  const year = parseInt(parts[2], 10);
+  return isNaN(year) ? null : year.toString();
 }
 
-// Restituisce la categoria in base alla modalità
-function getCategory(row) {
-  if (currentMode === "year") {
-    return getYearFromItalianDate(row.Data) || "Non disponibile";
-  } else {
-    return row.Età || "Non determinato";
-  }
+function colorForCategory(category, index) {
+  const palette = [
+    "#1f78b4", "#33a02c", "#e31a1c", "#ff7f00",
+    "#6a3d9a", "#b15928", "#a6cee3", "#b2df8a"
+  ];
+  if (!category) return "#999";
+  return palette[index % palette.length];
 }
 
-/* ===============================
-   4. CARICAMENTO DATI CSV
-   =============================== */
+/* ======================================================
+   CARICAMENTO DATI
+====================================================== */
 
-function loadData() {
+async function loadData() {
+  console.log("Carico CSV da:", CSV_URL);
 
-  const csvUrl = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQV5vkNteaZi31wNAuMVEvaBVyETWETC9C3R01wmtB_JaoSgXPasKPS9ZdjrrN9j4gPjv-_ZoOeWpkS/pub?gid=602128412&single=true&output=csv";
+  const response = await fetch(CSV_URL);
+  const text = await response.text();
 
-  console.log("Carico CSV da:", csvUrl);
+  console.log("CSV caricato, lunghezza:", text.length);
 
-  fetch(csvUrl)
-    .then(response => {
-      if (!response.ok) {
-        throw new Error("Errore HTTP: " + response.status);
-      }
-      return response.text();
-    })
-    .then(csvText => {
-      console.log("CSV caricato, lunghezza:", csvText.length);
+  const rows = text.trim().split("\n");
+  const headers = rows[0].split(",").map(h => h.trim());
 
-      const rows = csvText.trim().split("\n");
-      const headers = rows[0].split(",");
+  // reset
+  markersData.forEach(o => map.removeLayer(o.marker));
+  markersData = [];
 
-      markersData.forEach(obj => map.removeLayer(obj.marker));
-      markersData = [];
+  for (let i = 1; i < rows.length; i++) {
+    const values = rows[i].split(",");
+    const row = {};
+    headers.forEach((h, idx) => row[h] = values[idx]);
 
-      const categoriesSet = new Set();
+    const lat = parseFloat(row["Latitudine"]);
+    const lng = parseFloat(row["Longitudine"]);
 
-      for (let i = 1; i < rows.length; i++) {
-        const values = rows[i].split(",");
-        const row = {};
-        headers.forEach((h, idx) => row[h] = values[idx]);
+    if (isNaN(lat) || isNaN(lng)) continue;
 
-        const lat = parseFloat(row.Latitudine);
-        const lng = parseFloat(row.Longitudine);
+    const marker = L.circleMarker([lat, lng], {
+      radius: 7,
+      weight: 1,
+      color: "#000",
+      fillOpacity: 0.9
+    }).addTo(map);
 
-        if (isNaN(lat) || isNaN(lng)) continue;
+    marker.bindPopup(`
+      <b>Data:</b> ${row["Data"] || "—"}<br>
+      <b>Età:</b> ${row["Età"] || "—"}
+    `);
 
-        const category = getCategory(row);
-        categoriesSet.add(category);
-
-        const marker = L.circleMarker([lat, lng], {
-          radius: 7,
-          color: "#000",
-          weight: 1,
-          fillOpacity: 0.9
-        });
-
-        marker.addTo(map);
-
-        marker.bindPopup(
-          `<b>Data:</b> ${row.Data || "—"}<br>
-           <b>Età:</b> ${row.Età || "—"}`
-        );
-
-        markersData.push({ marker, category });
-      }
-
-      // updateColors(categoriesSet);
-      // updateLegend(categoriesSet);
-    })
-    .catch(error => {
-      console.error("Errore caricamento CSV:", error);
+    markersData.push({
+      marker,
+      data: normalize(row["Data"]),
+      age: normalize(row["Età"])
     });
+  }
+
+  applyMode();
 }
 
+/* ======================================================
+   MODALITÀ & COLORI
+====================================================== */
 
-/* ===============================
-   5. COLORAZIONE MARKER
-   =============================== */
-
-function updateColors(categoriesSet) {
-  const categories = Array.from(categoriesSet);
-  const colorMap = {};
-
-  categories.forEach((cat, i) => {
-    colorMap[cat] =
-      (cat === "Non disponibile" || cat === "Non determinato")
-      ? COLOR_MISSING
-      : COLOR_PALETTE[i % COLOR_PALETTE.length];
-  });
+function applyMode() {
+  const categories = [];
+  const categoryIndex = {};
 
   markersData.forEach(obj => {
-    const visible =
-      activeFilters.size === 0 || activeFilters.has(obj.category);
+    let category = null;
 
-    obj.marker.setStyle({
-      fillColor: colorMap[obj.category],
-      fillOpacity: visible ? 0.9 : 0
-    });
-  });
-}
-
-/* ===============================
-   6. LEGENDA + FILTRI
-   =============================== */
-
-function updateLegend(categoriesSet) {
-  const legend = document.getElementById("legend");
-  legend.innerHTML = `<b>${
-    currentMode === "year" ? "Anno di avvistamento" : "Età presunta"
-  }</b><br><br>`;
-
-  const categories = Array.from(categoriesSet).sort();
-
-  categories.forEach((cat, i) => {
-    const color =
-      (cat === "Non disponibile" || cat === "Non determinato")
-      ? COLOR_MISSING
-      : COLOR_PALETTE[i % COLOR_PALETTE.length];
-
-    const item = document.createElement("div");
-    item.className = "legend-item";
-
-    if (activeFilters.size > 0 && !activeFilters.has(cat)) {
-      item.classList.add("inactive");
+    if (currentMode === "date") {
+      category = getYearFromItalianDate(obj.data);
+    } else {
+      category = obj.age;
     }
 
-    item.innerHTML = `
-      <div class="legend-color" style="background:${color}"></div>
-      <span>${cat}</span>
-    `;
+    if (!category) category = "Non disponibile";
 
-    // Click = toggle filtro
-    item.onclick = () => {
-      if (activeFilters.has(cat)) {
-        activeFilters.delete(cat);
+    if (!(category in categoryIndex)) {
+      categoryIndex[category] = categories.length;
+      categories.push(category);
+    }
+
+    obj.category = category;
+  });
+
+  activeCategories = new Set(categories);
+
+  markersData.forEach(obj => {
+    const idx = categoryIndex[obj.category];
+    obj.marker.setStyle({
+      fillColor: colorForCategory(obj.category, idx)
+    });
+  });
+
+  updateLegend(categories, categoryIndex);
+}
+
+/* ======================================================
+   LEGENDA CLICCABILE
+====================================================== */
+
+function updateLegend(categories, categoryIndex) {
+  const legend = document.getElementById("legend");
+  legend.innerHTML = `<b>${
+    currentMode === "date" ? "Anno di avvistamento" : "Età presunta"
+  }</b><br>`;
+
+  categories.forEach(cat => {
+    const idx = categoryIndex[cat];
+    const color = colorForCategory(cat, idx);
+
+    const div = document.createElement("div");
+    div.className = "legend-item";
+    div.innerHTML = `<span style="background:${color}"></span>${cat}`;
+
+    div.onclick = () => {
+      if (activeCategories.has(cat)) {
+        activeCategories.delete(cat);
+        div.classList.add("disabled");
       } else {
-        activeFilters.add(cat);
+        activeCategories.add(cat);
+        div.classList.remove("disabled");
       }
-      updateColors(categoriesSet);
-      updateLegend(categoriesSet);
+
+      markersData.forEach(obj => {
+        if (obj.category === cat) {
+          if (activeCategories.has(cat)) {
+            obj.marker.addTo(map);
+          } else {
+            map.removeLayer(obj.marker);
+          }
+        }
+      });
     };
 
-    legend.appendChild(item);
+    legend.appendChild(div);
   });
 }
 
-/* ===============================
-   7. CAMBIO MODALITÀ
-   =============================== */
+/* ======================================================
+   EVENTI
+====================================================== */
 
 document.getElementById("modeSelect").addEventListener("change", e => {
   currentMode = e.target.value;
-  activeFilters.clear();
-  loadData();
+  applyMode();
 });
 
-/* ===============================
-   8. AVVIO
-   =============================== */
+/* ======================================================
+   AVVIO
+====================================================== */
 
 loadData();
-
 </script>
+
 </body>
 </html>
