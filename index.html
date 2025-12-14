@@ -1,217 +1,304 @@
 <!DOCTYPE html>
 <html lang="it">
 <head>
-  <meta charset="utf-8" />
-  <title>Mappa avvistamenti</title>
+  <meta charset="utf-8">
+
+  <!-- Responsive: fondamentale per Google Sites e mobile -->
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
-  <!-- Leaflet -->
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <title>Mappa avvistamenti</title>
 
-  <!-- PapaParse -->
-  <script src="https://unpkg.com/papaparse@5.4.1/papaparse.min.js"></script>
+  <!-- Leaflet CSS -->
+  <link
+    rel="stylesheet"
+    href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+  />
 
+  <!-- Leaflet JS -->
+  <script
+    src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js">
+  </script>
+
+  <!-- Stili base -->
   <style>
-    html, body { height: 100%; margin: 0; }
-    #map { height: 100%; }
+    body {
+      margin: 0;
+      font-family: Arial, sans-serif;
+    }
 
+    /* Contenitore mappa */
+    #map {
+      height: 100vh;
+      width: 100%;
+    }
+
+    /* Box controlli (in alto a sinistra) */
     .controls {
       position: absolute;
       top: 10px;
       left: 10px;
-      background: white;
-      padding: 8px;
       z-index: 1000;
-      font-family: sans-serif;
-      border-radius: 6px;
-      box-shadow: 0 0 5px rgba(0,0,0,0.3);
-    }
-
-    .legend {
       background: white;
       padding: 8px;
-      font-family: sans-serif;
       border-radius: 6px;
-      box-shadow: 0 0 5px rgba(0,0,0,0.3);
-      line-height: 1.4em;
+      box-shadow: 0 0 6px rgba(0,0,0,0.3);
     }
 
-    .legend i {
+    /* Legenda (in basso a destra) */
+    .legend {
+      position: absolute;
+      bottom: 20px;
+      right: 20px;
+      z-index: 1000;
+      background: white;
+      padding: 10px;
+      border-radius: 6px;
+      box-shadow: 0 0 6px rgba(0,0,0,0.3);
+      font-size: 14px;
+    }
+
+    /* Riga della legenda cliccabile */
+    .legend-item {
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      margin-bottom: 4px;
+    }
+
+    /* Quadratino colore */
+    .legend-color {
       width: 14px;
       height: 14px;
-      float: left;
       margin-right: 6px;
-      opacity: 0.9;
+      border: 1px solid #333;
+    }
+
+    /* Stato disattivo (filtro spento) */
+    .inactive {
+      opacity: 0.3;
+      text-decoration: line-through;
     }
   </style>
 </head>
 
 <body>
 
-<div id="map"></div>
-
+<!-- Selettore modalità -->
 <div class="controls">
-  <b>Colora per:</b><br>
-  <select id="modeSelect">
-    <option value="eta">Età presunta</option>
-    <option value="data">Data avvistamento</option>
-  </select>
+  <label>
+    Colorazione:
+    <select id="modeSelect">
+      <option value="year">Data avvistamento</option>
+      <option value="age">Età presunta</option>
+    </select>
+  </label>
 </div>
 
-<script>
-/* ================== CONFIG ================== */
+<!-- Mappa -->
+<div id="map"></div>
 
+<!-- Legenda -->
+<div id="legend" class="legend"></div>
+
+<script>
+/* ===============================
+   1. CONFIGURAZIONE BASE
+   =============================== */
+
+// URL CSV pubblicato del foglio "Dati mappa"
 const CSV_URL =
   "https://docs.google.com/spreadsheets/d/e/2PACX-1vQV5vkNteaZi31wNAuMVEvaBVyETWETC9C3R01wmtB_JaoSgXPasKPS9ZdjrrN9j4gPjv-_ZoOeWpkS/pub?gid=602128412&single=true&output=csv";
 
-const palette = [
-  "#1f78b4", "#33a02c", "#e31a1c", "#ff7f00",
-  "#6a3d9a", "#b15928", "#a6cee3", "#b2df8a"
+// Colori predefiniti (usati in rotazione)
+const COLOR_PALETTE = [
+  "#1f77b4", "#ff7f0e", "#2ca02c", "#d62728",
+  "#9467bd", "#8c564b", "#e377c2", "#7f7f7f",
+  "#bcbd22", "#17becf"
 ];
 
-const NO_DATA_COLOR = "#999999";
+// Colore per dato mancante
+const COLOR_MISSING = "#999999";
 
-/* ================== MAPPA ================== */
+// Insieme dei filtri attivi
+let activeFilters = new Set();
 
-const map = L.map("map").setView([45.1370, 7.0480], 10);
+// Tutti i marker caricati
+let markersData = [];
+
+// Modalità corrente ("year" o "age")
+let currentMode = "year";
+
+/* ===============================
+   2. INIZIALIZZA MAPPA
+   =============================== */
+
+const map = L.map("map").setView(
+  [45.1370, 7.0480], // Valle di Susa
+  10
+);
 
 L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-  attribution: "&copy; OpenStreetMap"
+  attribution: "© OpenStreetMap"
 }).addTo(map);
 
-const markers = L.layerGroup().addTo(map);
+/* ===============================
+   3. FUNZIONI DI SUPPORTO
+   =============================== */
 
-/* ================== LEGENDA ================== */
-
-const legend = L.control({ position: "bottomright" });
-legend.onAdd = function () {
-  return L.DomUtil.create("div", "legend");
-};
-legend.addTo(map);
-
-/* ================== UTILS ================== */
-
-// parse DD/MM/YYYY
+// Converte "13/12/2025" → 2025
 function getYearFromItalianDate(value) {
-  if (!value || value === "undefined") return null;
-
-  // Caso 1: numero seriale Google Sheets
-  if (!isNaN(value)) {
-    const baseDate = new Date(1899, 11, 30);
-    const realDate = new Date(baseDate.getTime() + value * 86400000);
-    return realDate.getFullYear();
-  }
-
-  // Caso 2: DD/MM/YYYY
-  if (typeof value === "string" && value.includes("/")) {
-    const parts = value.split("/");
-    if (parts.length === 3) {
-      const year = parseInt(parts[2], 10);
-      return isNaN(year) ? null : year;
-    }
-  }
-
-  // Caso 3: YYYY-MM-DD o simili
-  const d = new Date(value);
-  if (!isNaN(d)) return d.getFullYear();
-
-  return null;
+  if (!value) return null;
+  const parts = value.split("/");
+  if (parts.length !== 3) return null;
+  return parts[2];
 }
 
-/* ================== LEGENDA ================== */
-
-function updateLegend(title, valueColorMap) {
-  const div = legend.getContainer();
-  div.innerHTML = `<b>${title}</b><br>`;
-
-  Object.keys(valueColorMap).forEach(key => {
-    div.innerHTML +=
-      `<i style="background:${valueColorMap[key]}"></i> ${key}<br>`;
-  });
-
-  div.innerHTML +=
-    `<i style="background:${NO_DATA_COLOR}"></i> Non disponibile`;
+// Restituisce la categoria in base alla modalità
+function getCategory(row) {
+  if (currentMode === "year") {
+    return getYearFromItalianDate(row.Data) || "Non disponibile";
+  } else {
+    return row.Età || "Non determinato";
+  }
 }
 
-/* ================== LOAD DATA ================== */
+/* ===============================
+   4. CARICAMENTO DATI CSV
+   =============================== */
 
-async function loadData(mode) {
+async function loadData() {
   const response = await fetch(CSV_URL);
-  const csvText = await response.text();
-  const rows = Papa.parse(csvText, { header: true }).data;
+  const text = await response.text();
 
-  markers.clearLayers();
+  const rows = text.trim().split("\n");
+  const headers = rows[0].split(",");
 
-  const valueSet = new Set();
+  // Pulisce eventuali marker precedenti
+  markersData.forEach(obj => map.removeLayer(obj.marker));
+  markersData = [];
 
-  rows.forEach(row => {
-    if (mode === "data") {
-      const year = getYearFromItalianDate(row["Data"]);
-      if (year) valueSet.add(year.toString());
-    }
-    if (mode === "eta") {
-      const eta = row["Età"];
-      if (eta && eta !== "undefined") valueSet.add(eta);
-    }
-  });
+  const categoriesSet = new Set();
 
-  const values = Array.from(valueSet).sort();
-  const colorMap = {};
+  for (let i = 1; i < rows.length; i++) {
+    const values = rows[i].split(",");
+    const row = {};
+    headers.forEach((h, idx) => row[h] = values[idx]);
 
-  values.forEach((v, i) => {
-    colorMap[v] = palette[i % palette.length];
-  });
+    const lat = parseFloat(row.Latitudine);
+    const lng = parseFloat(row.Longitudine);
 
-  rows.forEach(row => {
-    const lat = parseFloat(row["Latitudine"]);
-    const lng = parseFloat(row["Longitudine"]);
-    if (isNaN(lat) || isNaN(lng)) return;
+    // Esclude coordinate non valide
+    if (isNaN(lat) || isNaN(lng)) continue;
 
-    let color = NO_DATA_COLOR;
-
-    if (mode === "data") {
-      const year = getYearFromItalianDate(row["Data"]);
-      if (year && colorMap[year]) color = colorMap[year];
-    }
-
-    if (mode === "eta") {
-      const eta = row["Età"];
-      if (eta && colorMap[eta]) color = colorMap[eta];
-    }
+    const category = getCategory(row);
+    categoriesSet.add(category);
 
     const marker = L.circleMarker([lat, lng], {
-      radius: 6,
-      fillColor: color,
+      radius: 7,
       color: "#000",
       weight: 1,
-      fillOpacity: 0.85
-    });
+      fillOpacity: 0.9
+    }).addTo(map);
 
-    marker.bindPopup(`
-      <b>Data:</b> ${row["Data"] || "Non disponibile"}<br>
-      <b>Età:</b> ${row["Età"] || "Non disponibile"}
-    `);
+    marker.bindPopup(
+      `<b>Data:</b> ${row.Data || "—"}<br>
+       <b>Età:</b> ${row.Età || "—"}`
+    );
 
-    markers.addLayer(marker);
-  });
+    markersData.push({ marker, category });
+  }
 
-  updateLegend(
-    mode === "data" ? "Anno avvistamento" : "Età presunta",
-    colorMap
-  );
+  updateColors(categoriesSet);
+  updateLegend(categoriesSet);
 }
 
-/* ================== EVENTI ================== */
+/* ===============================
+   5. COLORAZIONE MARKER
+   =============================== */
+
+function updateColors(categoriesSet) {
+  const categories = Array.from(categoriesSet);
+  const colorMap = {};
+
+  categories.forEach((cat, i) => {
+    colorMap[cat] =
+      (cat === "Non disponibile" || cat === "Non determinato")
+      ? COLOR_MISSING
+      : COLOR_PALETTE[i % COLOR_PALETTE.length];
+  });
+
+  markersData.forEach(obj => {
+    const visible =
+      activeFilters.size === 0 || activeFilters.has(obj.category);
+
+    obj.marker.setStyle({
+      fillColor: colorMap[obj.category],
+      fillOpacity: visible ? 0.9 : 0
+    });
+  });
+}
+
+/* ===============================
+   6. LEGENDA + FILTRI
+   =============================== */
+
+function updateLegend(categoriesSet) {
+  const legend = document.getElementById("legend");
+  legend.innerHTML = `<b>${
+    currentMode === "year" ? "Anno di avvistamento" : "Età presunta"
+  }</b><br><br>`;
+
+  const categories = Array.from(categoriesSet).sort();
+
+  categories.forEach((cat, i) => {
+    const color =
+      (cat === "Non disponibile" || cat === "Non determinato")
+      ? COLOR_MISSING
+      : COLOR_PALETTE[i % COLOR_PALETTE.length];
+
+    const item = document.createElement("div");
+    item.className = "legend-item";
+
+    if (activeFilters.size > 0 && !activeFilters.has(cat)) {
+      item.classList.add("inactive");
+    }
+
+    item.innerHTML = `
+      <div class="legend-color" style="background:${color}"></div>
+      <span>${cat}</span>
+    `;
+
+    // Click = toggle filtro
+    item.onclick = () => {
+      if (activeFilters.has(cat)) {
+        activeFilters.delete(cat);
+      } else {
+        activeFilters.add(cat);
+      }
+      updateColors(categoriesSet);
+      updateLegend(categoriesSet);
+    };
+
+    legend.appendChild(item);
+  });
+}
+
+/* ===============================
+   7. CAMBIO MODALITÀ
+   =============================== */
 
 document.getElementById("modeSelect").addEventListener("change", e => {
-  loadData(e.target.value);
+  currentMode = e.target.value;
+  activeFilters.clear();
+  loadData();
 });
 
-// avvio
-loadData("eta");
+/* ===============================
+   8. AVVIO
+   =============================== */
+
+loadData();
 
 </script>
-
 </body>
 </html>
