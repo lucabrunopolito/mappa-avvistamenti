@@ -9,7 +9,7 @@
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
-  <!-- PapaParse (CSV) -->
+  <!-- PapaParse -->
   <script src="https://unpkg.com/papaparse@5.4.1/papaparse.min.js"></script>
 
   <style>
@@ -62,19 +62,15 @@
 <script>
 /* ================== CONFIG ================== */
 
-// 🔁 INCOLLA QUI IL TUO URL CSV PUBBLICATO
 const CSV_URL =
   "https://docs.google.com/spreadsheets/d/e/2PACX-1vQV5vkNteaZi31wNAuMVEvaBVyETWETC9C3R01wmtB_JaoSgXPasKPS9ZdjrrN9j4gPjv-_ZoOeWpkS/pub?gid=602128412&single=true&output=csv";
 
-// colori per anno
-const yearColors = [
-  "#1f78b4",
-  "#33a02c",
-  "#e31a1c",
-  "#ff7f00",
-  "#6a3d9a",
-  "#b15928"
+const palette = [
+  "#1f78b4", "#33a02c", "#e31a1c", "#ff7f00",
+  "#6a3d9a", "#b15928", "#a6cee3", "#b2df8a"
 ];
+
+const NO_DATA_COLOR = "#999999";
 
 /* ================== MAPPA ================== */
 
@@ -90,99 +86,80 @@ const markers = L.layerGroup().addTo(map);
 
 const legend = L.control({ position: "bottomright" });
 legend.onAdd = function () {
-  const div = L.DomUtil.create("div", "legend");
-  return div;
+  return L.DomUtil.create("div", "legend");
 };
 legend.addTo(map);
 
-const legendYears = new Set();
+/* ================== UTILS ================== */
 
-/* ================== FUNZIONI SUPPORTO ================== */
-
-function getYear(dateStr) {
+// parse DD/MM/YYYY
+function getYearFromItalianDate(dateStr) {
   if (!dateStr || dateStr === "undefined") return null;
-  const d = new Date(dateStr);
-  return isNaN(d) ? null : d.getFullYear();
-}
-
-function getColorByEta(eta) {
-  if (!eta || eta === "undefined") return "#999999";
-  eta = eta.toLowerCase();
-  if (eta.includes("adult")) return "#1f78b4";
-  if (eta.includes("giovan")) return "#33a02c";
-  if (eta.includes("non")) return "#e31a1c";
-  return "#999999";
-}
-
-function getColorByYear(year, yearMap) {
-  if (!year) return "#999999";
-  return yearMap[year] || "#999999";
+  const parts = dateStr.split("/");
+  if (parts.length !== 3) return null;
+  const year = parseInt(parts[2], 10);
+  return isNaN(year) ? null : year;
 }
 
 /* ================== LEGENDA ================== */
 
-function updateLegend(mode, yearMap = {}) {
+function updateLegend(title, valueColorMap) {
   const div = legend.getContainer();
-  div.innerHTML = "<b>Legenda</b><br>";
+  div.innerHTML = `<b>${title}</b><br>`;
 
-  if (mode === "eta") {
-    div.innerHTML += `
-      <i style="background:#1f78b4"></i> Adulto<br>
-      <i style="background:#33a02c"></i> Giovane<br>
-      <i style="background:#e31a1c"></i> Non determinato<br>
-      <i style="background:#999999"></i> Non disponibile
-    `;
-  }
-
-  if (mode === "data") {
-    Object.keys(yearMap).sort().forEach(year => {
-      div.innerHTML +=
-        `<i style="background:${yearMap[year]}"></i> ${year}<br>`;
-    });
-
+  Object.keys(valueColorMap).forEach(key => {
     div.innerHTML +=
-      `<i style="background:#999999"></i> Data non disponibile`;
-  }
+      `<i style="background:${valueColorMap[key]}"></i> ${key}<br>`;
+  });
+
+  div.innerHTML +=
+    `<i style="background:${NO_DATA_COLOR}"></i> Non disponibile`;
 }
 
-/* ================== CARICAMENTO DATI ================== */
+/* ================== LOAD DATA ================== */
 
-async function loadData(mode = "eta") {
+async function loadData(mode) {
   const response = await fetch(CSV_URL);
   const csvText = await response.text();
   const rows = Papa.parse(csvText, { header: true }).data;
 
   markers.clearLayers();
-  legendYears.clear();
 
-  const years = [];
+  const valueSet = new Set();
 
   rows.forEach(row => {
-    const year = getYear(row["Giorno"]);
-    if (year) years.push(year);
+    if (mode === "data") {
+      const year = getYearFromItalianDate(row["Giorno"]);
+      if (year) valueSet.add(year.toString());
+    }
+    if (mode === "eta") {
+      const eta = row["Età"];
+      if (eta && eta !== "undefined") valueSet.add(eta);
+    }
   });
 
-  const uniqueYears = [...new Set(years)].sort();
-  const yearMap = {};
-  uniqueYears.forEach((y, i) => {
-    yearMap[y] = yearColors[i % yearColors.length];
+  const values = Array.from(valueSet).sort();
+  const colorMap = {};
+
+  values.forEach((v, i) => {
+    colorMap[v] = palette[i % palette.length];
   });
 
   rows.forEach(row => {
     const lat = parseFloat(row["Latitudine"]);
     const lng = parseFloat(row["Longitudine"]);
-
     if (isNaN(lat) || isNaN(lng)) return;
 
-    let color = "#999999";
-
-    if (mode === "eta") {
-      color = getColorByEta(row["Età"]);
-    }
+    let color = NO_DATA_COLOR;
 
     if (mode === "data") {
-      const year = getYear(row["Giorno"]);
-      color = getColorByYear(year, yearMap);
+      const year = getYearFromItalianDate(row["Giorno"]);
+      if (year && colorMap[year]) color = colorMap[year];
+    }
+
+    if (mode === "eta") {
+      const eta = row["Età"];
+      if (eta && colorMap[eta]) color = colorMap[eta];
     }
 
     const marker = L.circleMarker([lat, lng], {
@@ -190,7 +167,6 @@ async function loadData(mode = "eta") {
       fillColor: color,
       color: "#000",
       weight: 1,
-      opacity: 1,
       fillOpacity: 0.85
     });
 
@@ -202,7 +178,10 @@ async function loadData(mode = "eta") {
     markers.addLayer(marker);
   });
 
-  updateLegend(mode, yearMap);
+  updateLegend(
+    mode === "data" ? "Anno avvistamento" : "Età presunta",
+    colorMap
+  );
 }
 
 /* ================== EVENTI ================== */
@@ -211,7 +190,7 @@ document.getElementById("modeSelect").addEventListener("change", e => {
   loadData(e.target.value);
 });
 
-// caricamento iniziale
+// avvio
 loadData("eta");
 
 </script>
