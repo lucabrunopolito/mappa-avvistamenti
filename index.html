@@ -9,173 +9,211 @@
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
-  <!-- PapaParse per CSV -->
+  <!-- PapaParse (CSV) -->
   <script src="https://unpkg.com/papaparse@5.4.1/papaparse.min.js"></script>
 
   <style>
-    body { margin: 0; font-family: Arial, sans-serif; }
-    #controls {
-      padding: 10px;
-      background: #f5f5f5;
-      border-bottom: 1px solid #ccc;
+    html, body { height: 100%; margin: 0; }
+    #map { height: 100%; }
+
+    .controls {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      background: white;
+      padding: 8px;
+      z-index: 1000;
+      font-family: sans-serif;
+      border-radius: 6px;
+      box-shadow: 0 0 5px rgba(0,0,0,0.3);
     }
-    #map {
-      height: calc(100vh - 60px);
-    }
-    select {
-      padding: 5px;
-      font-size: 14px;
-    }
+
     .legend {
-  background: white;
-  padding: 8px;
-  line-height: 1.4;
-  font-size: 13px;
-  border: 1px solid #ccc;
-}
+      background: white;
+      padding: 8px;
+      font-family: sans-serif;
+      border-radius: 6px;
+      box-shadow: 0 0 5px rgba(0,0,0,0.3);
+      line-height: 1.4em;
+    }
+
+    .legend i {
+      width: 14px;
+      height: 14px;
+      float: left;
+      margin-right: 6px;
+      opacity: 0.9;
+    }
   </style>
 </head>
 
 <body>
 
-<div id="controls">
-  Colora i segnaposto per:
-  <select id="colorMode">
+<div id="map"></div>
+
+<div class="controls">
+  <b>Colora per:</b><br>
+  <select id="modeSelect">
     <option value="eta">Età presunta</option>
     <option value="data">Data avvistamento</option>
   </select>
 </div>
 
-<div id="map"></div>
-
 <script>
-/* ================= CONFIG ================= */
+/* ================== CONFIG ================== */
 
+// 🔁 INCOLLA QUI IL TUO URL CSV PUBBLICATO
 const CSV_URL =
   "https://docs.google.com/spreadsheets/d/e/2PACX-1vQV5vkNteaZi31wNAuMVEvaBVyETWETC9C3R01wmtB_JaoSgXPasKPS9ZdjrrN9j4gPjv-_ZoOeWpkS/pub?gid=602128412&single=true&output=csv";
 
-// Centro Valle di Susa
-const INITIAL_VIEW = [45.1370, 7.0480];
-const INITIAL_ZOOM = 10;
+// colori per anno
+const yearColors = [
+  "#1f78b4",
+  "#33a02c",
+  "#e31a1c",
+  "#ff7f00",
+  "#6a3d9a",
+  "#b15928"
+];
 
-/* ================= MAP ================= */
+/* ================== MAPPA ================== */
 
-const map = L.map('map').setView(INITIAL_VIEW, INITIAL_ZOOM);
+const map = L.map("map").setView([45.1370, 7.0480], 10);
 
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-  attribution: '&copy; OpenStreetMap'
+L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+  attribution: "&copy; OpenStreetMap"
 }).addTo(map);
 
-const markersLayer = L.layerGroup().addTo(map);
+const markers = L.layerGroup().addTo(map);
+
+/* ================== LEGENDA ================== */
 
 const legend = L.control({ position: "bottomright" });
-
 legend.onAdd = function () {
   const div = L.DomUtil.create("div", "legend");
-  div.innerHTML = "";
   return div;
 };
-
 legend.addTo(map);
-document.querySelector(".legend").innerHTML = "TEST LEGENDA";
-  
-/* ================= UTILS ================= */
 
-function clean(value) {
-  if (!value || value === "undefined") return "Non disponibile";
-  return value;
+const legendYears = new Set();
+
+/* ================== FUNZIONI SUPPORTO ================== */
+
+function getYear(dateStr) {
+  if (!dateStr || dateStr === "undefined") return null;
+  const d = new Date(dateStr);
+  return isNaN(d) ? null : d.getFullYear();
 }
 
-function isValidCoord(v) {
-  return v !== null && v !== "" && v !== "undefined" && !isNaN(v);
+function getColorByEta(eta) {
+  if (!eta || eta === "undefined") return "#999999";
+  eta = eta.toLowerCase();
+  if (eta.includes("adult")) return "#1f78b4";
+  if (eta.includes("giovan")) return "#33a02c";
+  if (eta.includes("non")) return "#e31a1c";
+  return "#999999";
 }
 
-function colorByEta(eta) {
-  if (eta === "Non disponibile") return "gray";
-  if (eta.toLowerCase().includes("adult")) return "green";
-  if (eta.toLowerCase().includes("giovane")) return "orange";
-  return "blue";
+function getColorByYear(year, yearMap) {
+  if (!year) return "#999999";
+  return yearMap[year] || "#999999";
 }
 
-function colorByData(data) {
-  if (data === "Non disponibile") return "gray";
-  return "red"; // base (estendibile in futuro)
-}
+/* ================== LEGENDA ================== */
 
-function updateLegend(mode) {
-  const div = document.querySelector(".legend");
+function updateLegend(mode, yearMap = {}) {
+  const div = legend.getContainer();
+  div.innerHTML = "<b>Legenda</b><br>";
 
-  if (!div) return;
-  
   if (mode === "eta") {
-    div.innerHTML = `
-      <b>Età presunta</b><br>
-      <span style="color:green">●</span> Adulto<br>
-      <span style="color:orange">●</span> Giovane<br>
-      <span style="color:blue">●</span> Altro<br>
-      <span style="color:gray">●</span> Non disponibile
+    div.innerHTML += `
+      <i style="background:#1f78b4"></i> Adulto<br>
+      <i style="background:#33a02c"></i> Giovane<br>
+      <i style="background:#e31a1c"></i> Non determinato<br>
+      <i style="background:#999999"></i> Non disponibile
     `;
-  } else {
-    div.innerHTML = `
-      <b>Data avvistamento</b><br>
-      <span style="color:red">●</span> Data disponibile<br>
-      <span style="color:gray">●</span> Non disponibile
-    `;
+  }
+
+  if (mode === "data") {
+    Object.keys(yearMap).sort().forEach(year => {
+      div.innerHTML +=
+        `<i style="background:${yearMap[year]}"></i> ${year}<br>`;
+    });
+
+    div.innerHTML +=
+      `<i style="background:#999999"></i> Data non disponibile`;
   }
 }
 
-  
-/* ================= LOAD CSV ================= */
+/* ================== CARICAMENTO DATI ================== */
 
-function loadData(mode) {
-  markersLayer.clearLayers();
+async function loadData(mode = "eta") {
+  const response = await fetch(CSV_URL);
+  const csvText = await response.text();
+  const rows = Papa.parse(csvText, { header: true }).data;
 
-  Papa.parse(CSV_URL, {
-    download: true,
-    header: false,
-    skipEmptyLines: true,
-    complete: function(results) {
+  markers.clearLayers();
+  legendYears.clear();
 
-      results.data.forEach(row => {
-        const data = clean(row[0]);
-        const eta  = clean(row[1]);
-        const lat  = row[2];
-        const lng  = row[3];
+  const years = [];
 
-        if (!isValidCoord(lat) || !isValidCoord(lng)) return;
-
-        const color =
-          mode === "eta" ? colorByEta(eta) : colorByData(data);
-
-        const marker = L.circleMarker([lat, lng], {
-          radius: 7,
-          fillColor: color,
-          color: "#000",
-          weight: 1,
-          fillOpacity: 0.8
-        });
-
-        marker.bindPopup(
-          `<b>Data:</b> ${data}<br>
-           <b>Età:</b> ${eta}`
-        );
-
-        marker.addTo(markersLayer);
-      });
-      updateLegend(mode);
-    }
+  rows.forEach(row => {
+    const year = getYear(row["Giorno"]);
+    if (year) years.push(year);
   });
+
+  const uniqueYears = [...new Set(years)].sort();
+  const yearMap = {};
+  uniqueYears.forEach((y, i) => {
+    yearMap[y] = yearColors[i % yearColors.length];
+  });
+
+  rows.forEach(row => {
+    const lat = parseFloat(row["Latitudine"]);
+    const lng = parseFloat(row["Longitudine"]);
+
+    if (isNaN(lat) || isNaN(lng)) return;
+
+    let color = "#999999";
+
+    if (mode === "eta") {
+      color = getColorByEta(row["Età"]);
+    }
+
+    if (mode === "data") {
+      const year = getYear(row["Giorno"]);
+      color = getColorByYear(year, yearMap);
+    }
+
+    const marker = L.circleMarker([lat, lng], {
+      radius: 6,
+      fillColor: color,
+      color: "#000",
+      weight: 1,
+      opacity: 1,
+      fillOpacity: 0.85
+    });
+
+    marker.bindPopup(`
+      <b>Data:</b> ${row["Giorno"] || "Non disponibile"}<br>
+      <b>Età:</b> ${row["Età"] || "Non disponibile"}
+    `);
+
+    markers.addLayer(marker);
+  });
+
+  updateLegend(mode, yearMap);
 }
 
-/* ================= CONTROLS ================= */
+/* ================== EVENTI ================== */
 
-document.getElementById("colorMode").addEventListener("change", e => {
+document.getElementById("modeSelect").addEventListener("change", e => {
   loadData(e.target.value);
 });
 
-/* ================= INIT ================= */
-
+// caricamento iniziale
 loadData("eta");
+
 </script>
 
 </body>
