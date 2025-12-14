@@ -20,67 +20,44 @@
   </script>
 
   <!-- Stili base -->
-  <style>
-    body {
-      margin: 0;
-      font-family: Arial, sans-serif;
-    }
+<style>
+  html, body {
+    height: 100%;
+    margin: 0;
+  }
 
-    /* Contenitore mappa */
-    #map {
-      height: 100vh;
-      width: 100%;
-      pointer-events: auto;
-    }
+  /* Contenitore mappa */
+  #map {
+    height: 100vh;
+    width: 100%;
+  }
 
-    /* Box controlli (in alto a sinistra) */
-    .controls {
-      position: absolute;
-      top: 10px;
-      left: 10px;
-      z-index: 1000;
-      background: white;
-      padding: 8px;
-      border-radius: 6px;
-      box-shadow: 0 0 6px rgba(0,0,0,0.3);
-    }
+  /* Legenda */
+  .legend {
+    position: absolute;
+    bottom: 20px;
+    right: 20px;
+    z-index: 1000;
+    background: white;
+    padding: 10px;
+    border-radius: 6px;
+    box-shadow: 0 0 6px rgba(0,0,0,0.3);
+    font-size: 14px;
+    pointer-events: auto;
+  }
 
-    /* Legenda (in basso a destra) */
-    .legend {
-      position: absolute;
-      bottom: 20px;
-      right: 20px;
-      z-index: 1000;
-      background: white;
-      padding: 10px;
-      border-radius: 6px;
-      box-shadow: 0 0 6px rgba(0,0,0,0.3);
-      font-size: 14px;
-      pointer-events: auto;
-    }
+  .legend-item {
+    cursor: pointer;
+    margin-bottom: 4px;
+    user-select: none;
+  }
 
-    /* Riga della legenda cliccabile */
-    .legend-item {
-      cursor: pointer;
-      display: flex;
-      align-items: center;
-      margin-bottom: 4px;
-    }
-
-    /* Quadratino colore */
-    .legend-color {
-      width: 14px;
-      height: 14px;
-      margin-right: 6px;
-      border: 1px solid #333;
-    }
-
-    /* Stato disattivo (filtro spento) */
-    .inactive {
-      opacity: 0.3;
-      text-decoration: line-through;
-    }
-  </style>
+  .legend-item.disabled {
+    opacity: 0.4;
+    text-decoration: line-through;
+  }
+</style>
+  
 </head>
 
 <body>
